@@ -1,0 +1,74 @@
+{% extends "base.html" %} {% block content %}
+<div class="row mb-4">
+  <div class="col">
+    <h2>Job Applications</h2>
+  </div>
+  <div class="col text-end">
+    <a href="{{ url_for('add_job') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> Add New Job
+    </a>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Company</th>
+        <th>Position</th>
+        <th>Status</th>
+        <th>Applied Date</th>
+        <th>Resume Versions</th>
+        <th class="table-actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in jobs %}
+      <tr>
+        <td>{{ job.id }}</td>
+        <td>{{ job.company }}</td>
+        <td>{{ job.position }}</td>
+        <td>
+          <span
+            class="badge {% if job.status.name == 'APPLIED' %}bg-primary {% elif job.status.name == 'INTERVIEWING' %}bg-info {% elif job.status.name == 'OFFER' %}bg-success {% elif job.status.name == 'REJECTED' %}bg-danger {% elif job.status.name == 'WITHDRAWN' %}bg-warning {% else %}bg-secondary{% endif %}"
+          >
+            {{ job.status.value }}
+          </span>
+        </td>
+        <td>
+          {{ job.applied_date.strftime('%Y-%m-%d') if job.applied_date else
+          'N/A' }}
+        </td>
+        <td>{{ job.resume_versions|length }}</td>
+        <td>
+          <a
+            href="{{ url_for('view_job', job_id=job.id) }}"
+            class="btn btn-sm btn-info"
+          >
+            <i class="fas fa-eye"></i>
+          </a>
+          <form
+            action="{{ url_for('delete_job', job_id=job.id) }}"
+            method="POST"
+            class="d-inline"
+          >
+            <button
+              type="submit"
+              class="btn btn-sm btn-danger"
+              onclick="return confirm('Are you sure you want to delete this job?')"
+            >
+              <i class="fas fa-trash"></i>
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" class="text-center">No job applications found.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
