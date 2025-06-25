@@ -1,42 +1,98 @@
 # Job Applications Manager
 
-A Python-based application to efficiently manage job applications and track resume versions.
+A web-based application to help job seekers manage their job applications and track different versions of their resumes. Built with Flask and AWS S3 for file storage.
 
 ## Features
 
-- Track job applications with detailed information
-- Manage different versions of resumes for each application
-- Store resumes in cloud storage (AWS S3)
-- Track application status and history
-- CLI interface with future web interface support
-- Local SQLite database for data persistence
+- Track job applications with company name, position, and status
+- Upload and manage multiple versions of resumes for each job application
+- Add notes for each job application and resume version
+- Store resumes securely in AWS S3
+- Clean and intuitive web interface
+- Status tracking for each application
+- View and download resume versions
+
+## Technologies Used
+
+- Python 3.x
+- Flask
+- SQLAlchemy
+- AWS S3
+- Bootstrap 5
+- SQLite
 
 ## Setup
 
-1. Clone the repository
-2. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+1. Clone the repository:
+
+```bash
+git clone [your-repo-url]
+cd job-applications-manager
+```
+
+2. Create and activate a virtual environment:
+
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
 3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Set up environment variables in `.env`:
-   ```
-   AWS_ACCESS_KEY_ID=your_access_key
-   AWS_SECRET_ACCESS_KEY=your_secret_key
-   AWS_BUCKET_NAME=your_bucket_name
-   ```
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Set up environment variables:
+   Create a `.env` file in the root directory with the following:
+
+```
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_BUCKET_NAME=your_bucket_name
+```
+
+5. Initialize the database:
+
+```bash
+python models.py
+```
+
+6. Run the application:
+
+```bash
+python web_app.py
+```
+
+The application will be available at `http://localhost:5000`
 
 ## Usage
 
-Run the application:
+1. **Adding a Job Application**
 
-```bash
-python app.py
-```
+   - Click "Add Job" button
+   - Fill in company name, position, and optional notes
+   - Select the application status
+   - Upload an initial resume version if available
+
+2. **Managing Resume Versions**
+
+   - Navigate to a specific job application
+   - Upload new resume versions
+   - Add notes for each version
+   - View or download any version
+
+3. **Tracking Application Status**
+   - Update status directly from the job details page
+   - Track application progress from initial submission to offer/rejection
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Project Structure
 
