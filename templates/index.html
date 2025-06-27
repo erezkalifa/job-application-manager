@@ -24,42 +24,49 @@
             {% for job in jobs %}
             <tr>
               <td class="ps-4">
-                <div class="company-name">{{ job.company }}</div>
+                <div class="company-name">{{ job['company'] }}</div>
               </td>
               <td>
-                <div class="position-name">{{ job.position }}</div>
+                <div class="position-name">{{ job['position'] }}</div>
               </td>
               <td>
-                <span class="status-badge status-{{ job.status.name.lower() }}">
-                  {{ job.status.value }}
+                <span
+                  class="status-badge status-{{ job['status'].name.lower() }}"
+                >
+                  {{ job['status'].value }}
                 </span>
               </td>
               <td>
-                {% if job.applied_date %}
+                {% if job['applied_date'] %}
                 <div class="date-display">
                   <i class="far fa-calendar-alt me-2"></i>
-                  {{ job.applied_date.strftime('%Y-%m-%d') }}
+                  {{ job['applied_date'].strftime('%Y-%m-%d') }}
                 </div>
                 {% else %}
                 <span class="text-muted">Not applied</span>
                 {% endif %}
               </td>
               <td class="text-center">
-                <span class="resume-count"
-                  >{{ job.resume_versions|length }}</span
-                >
+                <span class="resume-count">0</span>
               </td>
               <td class="pe-4">
                 <div class="d-flex gap-2 justify-content-end">
                   <a
-                    href="{{ url_for('view_job', job_id=job.id) }}"
+                    href="{{ url_for('view_job', job_id=job['id']) }}"
                     class="btn btn-sm btn-outline-primary"
                     title="View Details"
                   >
                     <i class="fas fa-eye"></i>
                   </a>
+                  <a
+                    href="{{ url_for('interview_stages', job_id=job['id']) }}"
+                    class="btn btn-sm btn-outline-info"
+                    title="Interview Stages"
+                  >
+                    <i class="fas fa-tasks"></i>
+                  </a>
                   <form
-                    action="{{ url_for('delete_job', job_id=job.id) }}"
+                    action="{{ url_for('delete_job', job_id=job['id']) }}"
                     method="POST"
                     class="d-inline"
                     onsubmit="return confirm('Are you sure you want to delete this job?')"
@@ -209,6 +216,17 @@
   .btn-outline-primary:hover {
     background-color: var(--primary-color);
     border-color: var(--primary-color);
+    color: white;
+  }
+
+  .btn-outline-info {
+    color: var(--info-color);
+    border-color: var(--info-color);
+  }
+
+  .btn-outline-info:hover {
+    background-color: var(--info-color);
+    border-color: var(--info-color);
     color: white;
   }
 

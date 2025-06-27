@@ -1,274 +1,401 @@
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import Engine, Column
 import logging
 from datetime import datetime
+from typing import Optional, List, Any, Generator, TypeVar, cast
 from models import Job, ResumeVersion, ApplicationStatus, InterviewStage, InterviewQuestion, InterviewStageStatus, InterviewStageType
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar('T')
+
 class StorageManager:
-    def __init__(self, engine):
+    def __init__(self, engine: Engine) -> None:
         """Initialize the storage manager with a database engine"""
         Session = sessionmaker(bind=engine)
-        self.session = Session()
+        self.Session = Session
 
-    def add_job(self, company, position, notes=None):
-        """Add a new job application"""
+    @contextmanager
+    def session_scope(self) -> Generator[Session, None, None]:
+        """Provide a transactional scope around a series of operations."""
+        session = self.Session()
         try:
-            job = Job(
-                company=company,
-                position=position,
-                status=ApplicationStatus.DRAFT,
-                notes=notes
-            )
-            self.session.add(job)
-            self.session.commit()
-            return job
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error adding job: {str(e)}")
+            yield session
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Database error: {str(e)}")
             raise
+        finally:
+            session.close()
 
-    def add_resume_version(self, job_id, filename, s3_key, notes=None):
-        """Add a new resume version for a job"""
-        try:
-            # Get the current highest version number for this job
-            current_max = self.session.query(ResumeVersion)\
-                .filter_by(job_id=job_id)\
-                .order_by(ResumeVersion.version.desc())\
-                .first()
-            
-            new_version = 1 if not current_max else current_max.version + 1
-            
-            resume = ResumeVersion(
-                filename=filename,
-                s3_key=s3_key,
-                job_id=job_id,
-                version=new_version,
-                notes=notes
-            )
-            self.session.add(resume)
-            self.session.commit()
-            return resume
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error adding resume version: {str(e)}")
-            raise
+    def _validate_job_exists(self, session: Session, job_id: int) -> Job:
+        """Validate that a job exists"""
+        job = session.query(Job).filter_by(id=job_id).first()
+        if not job:
+            raise ValueError(f"Job with ID {job_id} does not exist")
+        return job
 
-    def update_job_status(self, job_id, status, applied_date=None):
-        """Update the status of a job application"""
-        try:
-            job = self.session.query(Job).filter_by(id=job_id).first()
+    def _validate_stage_exists(self, session: Session, stage_id: int) -> InterviewStage:
+        """Validate that an interview stage exists"""
+        stage = session.query(InterviewStage).filter_by(id=stage_id).first()
+        if not stage:
+            raise ValueError(f"Interview stage with ID {stage_id} does not exist")
+        return stage
+
+    def _validate_stage_data(self, stage_type: InterviewStageType, custom_stage_name: Optional[str]) -> None:
+        """Validate interview stage data"""
+        if stage_type == InterviewStageType.CUSTOM and not custom_stage_name:
+            raise ValueError("Custom stage name is required for custom stage type")
+        if stage_type != InterviewStageType.CUSTOM and custom_stage_name:
+            raise ValueError("Custom stage name should only be set for custom stage type")
+
+    def get_all_jobs(self) -> List[dict]:
+        """Get all jobs from the database"""
+        with self.session_scope() as session:
+            jobs = session.query(Job).order_by(Job.updated_at.desc()).all()
+            return [{
+                'id': job.id,
+                'company': job.company,
+                'position': job.position,
+                'status': job.status,
+                'applied_date': job.applied_date if job.applied_date is not None else None,
+                'notes': job.notes if job.notes is not None else None,
+                'resume_versions': len(job.resume_versions)
+            } for job in jobs]
+
+    def get_job(self, job_id: int) -> Optional[dict]:
+        """Get a specific job by ID"""
+        with self.session_scope() as session:
+            job = session.query(Job).filter_by(id=job_id).first()
             if not job:
-                raise ValueError(f"No job found with ID {job_id}")
+                return None
+            return {
+                'id': job.id,
+                'company': job.company,
+                'position': job.position,
+                'status': job.status,
+                'applied_date': job.applied_date if job.applied_date is not None else None,
+                'notes': job.notes if job.notes is not None else None,
+                'resume_versions': [{
+                    'id': version.id,
+                    'filename': version.filename,
+                    's3_key': version.s3_key,
+                    'version': version.version,
+                    'upload_date': version.upload_date,
+                    'notes': version.notes if version.notes is not None else None
+                } for version in job.resume_versions]
+            }
 
-            # Set the status as a string, not as an enum
-            job.status = status.upper()
+    def create_job(self, company: str, position: str, status: ApplicationStatus, 
+                  applied_date: Optional[datetime] = None, notes: Optional[str] = None) -> dict:
+        """Create a new job"""
+        with self.session_scope() as session:
+            job = Job()
+            setattr(job, 'company', company)
+            setattr(job, 'position', position)
+            setattr(job, 'status', status)
+            setattr(job, 'applied_date', applied_date)
+            setattr(job, 'notes', notes)
+            session.add(job)
+            session.flush()
+            return {
+                'id': job.id,
+                'company': job.company,
+                'position': job.position,
+                'status': job.status,
+                'applied_date': job.applied_date if job.applied_date is not None else None,
+                'notes': job.notes if job.notes is not None else None,
+                'resume_versions': []
+            }
 
-            # Only set applied_date if status is APPLIED and applied_date is not already set
-            if status.upper() == "APPLIED" and getattr(job, 'applied_date', None) is None:
-                setattr(job, 'applied_date', applied_date if applied_date is not None else datetime.utcnow())
+    def update_job(self, job_id: int, company: str, position: str, status: ApplicationStatus,
+                  applied_date: Optional[datetime] = None, notes: Optional[str] = None) -> dict:
+        """Update an existing job"""
+        with self.session_scope() as session:
+            job = self._validate_job_exists(session, job_id)
+            setattr(job, 'company', company)
+            setattr(job, 'position', position)
+            setattr(job, 'status', status)
+            setattr(job, 'applied_date', applied_date)
+            setattr(job, 'notes', notes)
+            return {
+                'id': job.id,
+                'company': job.company,
+                'position': job.position,
+                'status': job.status,
+                'applied_date': job.applied_date if job.applied_date is not None else None,
+                'notes': job.notes if job.notes is not None else None,
+                'resume_versions': [{
+                    'id': version.id,
+                    'filename': version.filename,
+                    's3_key': version.s3_key,
+                    'version': version.version,
+                    'upload_date': version.upload_date,
+                    'notes': version.notes if version.notes is not None else None
+                } for version in job.resume_versions]
+            }
 
-            self.session.commit()
-            return job
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error updating job status: {str(e)}")
-            raise
+    def delete_job(self, job_id: int) -> None:
+        """Delete a job"""
+        with self.session_scope() as session:
+            job = self._validate_job_exists(session, job_id)
+            session.delete(job)
 
-    def get_job(self, job_id):
-        """Get a job by ID"""
-        return self.session.query(Job).filter_by(id=job_id).first()
+    def get_resume_versions(self, job_id: int) -> List[dict]:
+        """Get all resume versions for a specific job"""
+        with self.session_scope() as session:
+            self._validate_job_exists(session, job_id)
+            versions = session.query(ResumeVersion).filter_by(job_id=job_id).order_by(ResumeVersion.version.desc()).all()
+            return [{
+                'id': version.id,
+                'filename': version.filename,
+                's3_key': version.s3_key,
+                'job_id': version.job_id,
+                'version': version.version,
+                'upload_date': version.upload_date,
+                'notes': version.notes if version.notes is not None else None
+            } for version in versions]
 
-    def get_all_jobs(self):
-        """Get all jobs"""
-        return self.session.query(Job).all()
+    def create_resume_version(self, job_id: int, filename: str, s3_key: str, 
+                            version: int, notes: Optional[str] = None) -> dict:
+        """Create a new resume version"""
+        with self.session_scope() as session:
+            self._validate_job_exists(session, job_id)
+            resume = ResumeVersion()
+            setattr(resume, 'job_id', job_id)
+            setattr(resume, 'filename', filename)
+            setattr(resume, 's3_key', s3_key)
+            setattr(resume, 'version', version)
+            setattr(resume, 'notes', notes)
+            session.add(resume)
+            session.flush()
+            return {
+                'id': resume.id,
+                'filename': resume.filename,
+                's3_key': resume.s3_key,
+                'job_id': resume.job_id,
+                'version': resume.version,
+                'upload_date': resume.upload_date,
+                'notes': resume.notes if resume.notes is not None else None
+            }
 
-    def get_job_resume_versions(self, job_id):
-        """Get all resume versions for a job"""
-        return self.session.query(ResumeVersion)\
-            .filter_by(job_id=job_id)\
-            .order_by(ResumeVersion.version)\
-            .all()
+    def get_resume_version(self, version_id: int) -> Optional[dict]:
+        """Get a specific resume version by ID"""
+        with self.session_scope() as session:
+            version = session.query(ResumeVersion).filter_by(id=version_id).first()
+            if not version:
+                return None
+            return {
+                'id': version.id,
+                'filename': version.filename,
+                's3_key': version.s3_key,
+                'job_id': version.job_id,
+                'version': version.version,
+                'upload_date': version.upload_date,
+                'notes': version.notes if version.notes is not None else None
+            }
 
-    def delete_job(self, job_id):
-        """Delete a job and its associated resume versions"""
-        try:
-            job = self.session.query(Job).filter_by(id=job_id).first()
-            if not job:
-                raise ValueError(f"No job found with ID {job_id}")
+    def delete_resume_version(self, version_id: int) -> None:
+        """Delete a resume version"""
+        with self.session_scope() as session:
+            version = session.query(ResumeVersion).filter_by(id=version_id).first()
+            if version:
+                session.delete(version)
+
+    def get_interview_stages(self, job_id: int) -> List[dict]:
+        """Get all interview stages for a specific job"""
+        with self.session_scope() as session:
+            self._validate_job_exists(session, job_id)
+            stages = session.query(InterviewStage).filter_by(job_id=job_id).order_by(InterviewStage.scheduled_date.asc()).all()
+            return [{
+                'id': stage.id,
+                'stage_type': stage.stage_type,
+                'custom_stage_name': stage.custom_stage_name if stage.custom_stage_name is not None else None,
+                'status': stage.status,
+                'scheduled_date': stage.scheduled_date if stage.scheduled_date is not None else None,
+                'completed_date': stage.completed_date if stage.completed_date is not None else None,
+                'key_takeaway': stage.key_takeaway if stage.key_takeaway is not None else None,
+                'general_notes': stage.general_notes if stage.general_notes is not None else None,
+                'questions': [{
+                    'id': q.id,
+                    'question': q.question if q.question is not None else None,
+                    'answer': q.answer if q.answer is not None else None,
+                    'notes': q.notes if q.notes is not None else None
+                } for q in stage.questions]
+            } for stage in stages]
+
+    def create_interview_stage(self, job_id: int, stage_type: InterviewStageType, 
+                             custom_stage_name: Optional[str] = None,
+                             scheduled_date: Optional[datetime] = None, 
+                             status: InterviewStageStatus = InterviewStageStatus.UPCOMING,
+                             key_takeaway: Optional[str] = None, 
+                             general_notes: Optional[str] = None) -> dict:
+        """Create a new interview stage"""
+        with self.session_scope() as session:
+            self._validate_job_exists(session, job_id)
+            self._validate_stage_data(stage_type, custom_stage_name)
             
-            self.session.delete(job)
-            self.session.commit()
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error deleting job: {str(e)}")
-            raise
+            stage = InterviewStage()
+            setattr(stage, 'job_id', job_id)
+            setattr(stage, 'stage_type', stage_type)
+            setattr(stage, 'custom_stage_name', custom_stage_name)
+            setattr(stage, 'scheduled_date', scheduled_date)
+            setattr(stage, 'status', status)
+            setattr(stage, 'key_takeaway', key_takeaway)
+            setattr(stage, 'general_notes', general_notes)
+            session.add(stage)
+            session.flush()
+            return {
+                'id': stage.id,
+                'job_id': stage.job_id,
+                'stage_type': stage.stage_type,
+                'custom_stage_name': stage.custom_stage_name if stage.custom_stage_name is not None else None,
+                'status': stage.status,
+                'scheduled_date': stage.scheduled_date if stage.scheduled_date is not None else None,
+                'completed_date': stage.completed_date if stage.completed_date is not None else None,
+                'key_takeaway': stage.key_takeaway if stage.key_takeaway is not None else None,
+                'general_notes': stage.general_notes if stage.general_notes is not None else None,
+                'questions': []
+            }
 
-    def update_resume_notes(self, job_id, version, notes):
-        """Update the notes for a specific resume version"""
-        try:
-            resume = self.session.query(ResumeVersion)\
-                .filter_by(job_id=job_id, version=version)\
-                .first()
-            
-            if not resume:
-                raise ValueError(f"No resume version {version} found for job {job_id}")
-            
-            resume.notes = notes
-            self.session.commit()
-            return resume
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error updating resume notes: {str(e)}")
-            raise
-
-    def close(self):
-        """Close the database session"""
-        self.session.close()
-
-    def delete_resume_version(self, job_id, version):
-        """Delete a specific resume version"""
-        try:
-            resume = self.session.query(ResumeVersion)\
-                .filter_by(job_id=job_id, version=version)\
-                .first()
-            
-            if not resume:
-                raise ValueError(f"No resume version {version} found for job {job_id}")
-            
-            s3_key = resume.s3_key  # Store the S3 key before deleting
-            self.session.delete(resume)
-            self.session.commit()
-            return s3_key
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error deleting resume version: {str(e)}")
-            raise
-
-    def add_interview_stage(self, job_id, stage_type, scheduled_date=None, custom_stage_name=None):
-        """Add a new interview stage for a job"""
-        try:
-            # Validate job exists
-            job = self.get_job(job_id)
-            if not job:
-                raise ValueError(f"No job found with ID {job_id}")
-
-            # Create new stage
-            stage = InterviewStage(
-                job_id=job_id,
-                stage_type=stage_type,
-                custom_stage_name=custom_stage_name if stage_type == InterviewStageType.CUSTOM else None,
-                scheduled_date=scheduled_date,
-                status=InterviewStageStatus.UPCOMING
-            )
-            
-            self.session.add(stage)
-            self.session.commit()
-            return stage
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error adding interview stage: {str(e)}")
-            raise
-
-    def get_interview_stages(self, job_id):
-        """Get all interview stages for a job"""
-        return self.session.query(InterviewStage)\
-            .filter_by(job_id=job_id)\
-            .order_by(InterviewStage.scheduled_date)\
-            .all()
-
-    def update_interview_stage(self, stage_id, **kwargs):
-        """Update an interview stage"""
-        try:
-            stage = self.session.query(InterviewStage).filter_by(id=stage_id).first()
+    def get_interview_stage(self, stage_id: int) -> Optional[dict]:
+        """Get a specific interview stage by ID"""
+        with self.session_scope() as session:
+            stage = self._validate_stage_exists(session, stage_id)
             if not stage:
-                raise ValueError(f"No interview stage found with ID {stage_id}")
+                return None
+            return {
+                'id': stage.id,
+                'job_id': stage.job_id,
+                'stage_type': stage.stage_type,
+                'custom_stage_name': stage.custom_stage_name if stage.custom_stage_name is not None else None,
+                'status': stage.status,
+                'scheduled_date': stage.scheduled_date if stage.scheduled_date is not None else None,
+                'completed_date': stage.completed_date if stage.completed_date is not None else None,
+                'key_takeaway': stage.key_takeaway if stage.key_takeaway is not None else None,
+                'general_notes': stage.general_notes if stage.general_notes is not None else None,
+                'questions': [{
+                    'id': q.id,
+                    'question': q.question if q.question is not None else None,
+                    'answer': q.answer if q.answer is not None else None,
+                    'notes': q.notes if q.notes is not None else None
+                } for q in stage.questions]
+            }
 
-            # Update allowed fields
-            allowed_fields = ['stage_type', 'custom_stage_name', 'status', 'scheduled_date', 
-                            'completed_date', 'key_takeaway', 'general_notes']
+    def update_interview_stage(self, stage_id: int, stage_type: Optional[InterviewStageType] = None,
+                             custom_stage_name: Optional[str] = None,
+                             scheduled_date: Optional[datetime] = None,
+                             completed_date: Optional[datetime] = None,
+                             status: Optional[InterviewStageStatus] = None,
+                             key_takeaway: Optional[str] = None,
+                             general_notes: Optional[str] = None) -> dict:
+        """Update an existing interview stage"""
+        with self.session_scope() as session:
+            stage = self._validate_stage_exists(session, stage_id)
             
-            for field, value in kwargs.items():
-                if field in allowed_fields:
-                    setattr(stage, field, value)
+            if stage_type is not None:
+                self._validate_stage_data(stage_type, 
+                                       custom_stage_name if custom_stage_name is not None 
+                                       else cast(Optional[str], stage.custom_stage_name))
+                setattr(stage, 'stage_type', stage_type)
+            if custom_stage_name is not None:
+                self._validate_stage_data(cast(InterviewStageType, stage.stage_type), custom_stage_name)
+                setattr(stage, 'custom_stage_name', custom_stage_name)
+            if scheduled_date is not None:
+                setattr(stage, 'scheduled_date', scheduled_date)
+            if completed_date is not None:
+                setattr(stage, 'completed_date', completed_date)
+            if status is not None:
+                setattr(stage, 'status', status)
+            if key_takeaway is not None:
+                setattr(stage, 'key_takeaway', key_takeaway)
+            if general_notes is not None:
+                setattr(stage, 'general_notes', general_notes)
+            return {
+                'id': stage.id,
+                'job_id': stage.job_id,
+                'stage_type': stage.stage_type,
+                'custom_stage_name': stage.custom_stage_name if stage.custom_stage_name is not None else None,
+                'status': stage.status,
+                'scheduled_date': stage.scheduled_date if stage.scheduled_date is not None else None,
+                'completed_date': stage.completed_date if stage.completed_date is not None else None,
+                'key_takeaway': stage.key_takeaway if stage.key_takeaway is not None else None,
+                'general_notes': stage.general_notes if stage.general_notes is not None else None,
+                'questions': [{
+                    'id': q.id,
+                    'question': q.question if q.question is not None else None,
+                    'answer': q.answer if q.answer is not None else None,
+                    'notes': q.notes if q.notes is not None else None
+                } for q in stage.questions]
+            }
 
-            self.session.commit()
-            return stage
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error updating interview stage: {str(e)}")
-            raise
-
-    def delete_interview_stage(self, stage_id):
+    def delete_interview_stage(self, stage_id: int) -> None:
         """Delete an interview stage"""
-        try:
-            stage = self.session.query(InterviewStage).filter_by(id=stage_id).first()
-            if not stage:
-                raise ValueError(f"No interview stage found with ID {stage_id}")
+        with self.session_scope() as session:
+            stage = self._validate_stage_exists(session, stage_id)
+            session.delete(stage)
 
-            self.session.delete(stage)
-            self.session.commit()
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error deleting interview stage: {str(e)}")
-            raise
+    def get_interview_questions(self, stage_id: int) -> List[InterviewQuestion]:
+        """Get all questions for a specific interview stage"""
+        with self.session_scope() as session:
+            self._validate_stage_exists(session, stage_id)
+            return session.query(InterviewQuestion).filter_by(stage_id=stage_id).order_by(InterviewQuestion.created_at.asc()).all()
 
-    def add_interview_question(self, stage_id, question, answer=None, notes=None):
-        """Add a question to an interview stage"""
-        try:
-            # Validate stage exists
-            stage = self.session.query(InterviewStage).filter_by(id=stage_id).first()
-            if not stage:
-                raise ValueError(f"No interview stage found with ID {stage_id}")
+    def create_interview_question(self, stage_id: int, question: str, 
+                                answer: Optional[str] = None, 
+                                notes: Optional[str] = None) -> InterviewQuestion:
+        """Create a new interview question"""
+        with self.session_scope() as session:
+            self._validate_stage_exists(session, stage_id)
+            q = InterviewQuestion()
+            setattr(q, 'stage_id', stage_id)
+            setattr(q, 'question', question)
+            setattr(q, 'answer', answer)
+            setattr(q, 'notes', notes)
+            session.add(q)
+            session.flush()
+            return q
 
-            # Create new question
-            question = InterviewQuestion(
-                stage_id=stage_id,
-                question=question,
-                answer=answer,
-                notes=notes
-            )
-            
-            self.session.add(question)
-            self.session.commit()
-            return question
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error adding interview question: {str(e)}")
-            raise
-
-    def update_interview_question(self, question_id, **kwargs):
-        """Update an interview question"""
-        try:
-            question = self.session.query(InterviewQuestion).filter_by(id=question_id).first()
+    def get_interview_question(self, question_id: int) -> Optional[dict]:
+        """Get a specific interview question by ID"""
+        with self.session_scope() as session:
+            question = session.query(InterviewQuestion).filter_by(id=question_id).first()
             if not question:
-                raise ValueError(f"No interview question found with ID {question_id}")
+                return None
+            return {
+                'id': question.id,
+                'question': question.question if question.question is not None else None,
+                'answer': question.answer if question.answer is not None else None,
+                'notes': question.notes if question.notes is not None else None,
+                'stage': {
+                    'id': question.stage.id,
+                    'job_id': question.stage.job_id
+                }
+            }
 
-            # Update allowed fields
-            allowed_fields = ['question', 'answer', 'notes']
+    def update_interview_question(self, question_id: int, question: Optional[str] = None, 
+                                answer: Optional[str] = None, 
+                                notes: Optional[str] = None) -> InterviewQuestion:
+        """Update an existing interview question"""
+        with self.session_scope() as session:
+            q = session.query(InterviewQuestion).filter_by(id=question_id).first()
+            if not q:
+                raise ValueError(f"Interview question with ID {question_id} does not exist")
             
-            for field, value in kwargs.items():
-                if field in allowed_fields:
-                    setattr(question, field, value)
+            if question is not None:
+                setattr(q, 'question', question)
+            if answer is not None:
+                setattr(q, 'answer', answer)
+            if notes is not None:
+                setattr(q, 'notes', notes)
+            return q
 
-            self.session.commit()
-            return question
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error updating interview question: {str(e)}")
-            raise
-
-    def delete_interview_question(self, question_id):
+    def delete_interview_question(self, question_id: int) -> None:
         """Delete an interview question"""
-        try:
-            question = self.session.query(InterviewQuestion).filter_by(id=question_id).first()
-            if not question:
-                raise ValueError(f"No interview question found with ID {question_id}")
-
-            self.session.delete(question)
-            self.session.commit()
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            logger.error(f"Error deleting interview question: {str(e)}")
-            raise 
+        with self.session_scope() as session:
+            question = session.query(InterviewQuestion).filter_by(id=question_id).first()
+            if question:
+                session.delete(question) 

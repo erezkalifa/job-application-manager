@@ -38,9 +38,14 @@ def cli():
 def add_job(company, position, notes):
     """Add a new job application"""
     try:
-        job = storage.add_job(company, position, notes)
-        console.print(f"[green]Successfully added job application for {company} - {position}[/green]")
-        console.print(f"Job ID: {job.id}")
+        job = storage.create_job(
+            company=company,
+            position=position,
+            status=ApplicationStatus.DRAFT,
+            notes=notes
+        )
+        console.print(f"[green]Successfully added job application for {company}[/green]")
+        console.print(f"Job ID: {job['id']}")
     except Exception as e:
         console.print(f"[red]Error adding job: {str(e)}[/red]")
 
@@ -62,14 +67,15 @@ def add_resume(job_id, resume, notes):
         s3_key = s3.upload_file(resume, job_id)
         
         # Add to database
-        resume_version = storage.add_resume_version(
+        resume_version = storage.create_resume_version(
             job_id=job_id,
             filename=os.path.basename(resume),
             s3_key=s3_key,
+            version=1,
             notes=notes
         )
         
-        console.print(f"[green]Successfully uploaded resume version {resume_version.version}[/green]")
+        console.print(f"[green]Successfully uploaded resume version {resume_version['version']}[/green]")
     except Exception as e:
         console.print(f"[red]Error uploading resume: {str(e)}[/red]")
 
@@ -83,9 +89,23 @@ def add_resume(job_id, resume, notes):
 def update_status(job_id, status, applied_date):
     """Update the status of a job application"""
     try:
-        job = storage.update_job_status(job_id, status, applied_date)
-        console.print(f"[green]Successfully updated status for {job.company} - {job.position}[/green]")
-        console.print(f"New status: {job.status.value}")
+        # Get current job data
+        job = storage.get_job(job_id)
+        if not job:
+            console.print(f"[red]No job found with ID {job_id}[/red]")
+            return
+
+        # Update job with new status
+        job = storage.update_job(
+            job_id=job_id,
+            company=job['company'],
+            position=job['position'],
+            status=ApplicationStatus[status],
+            applied_date=applied_date,
+            notes=job['notes']
+        )
+        console.print(f"[green]Successfully updated status for {job['company']} - {job['position']}[/green]")
+        console.print(f"New status: {job['status'].value}")
     except Exception as e:
         console.print(f"[red]Error updating status: {str(e)}[/red]")
 
@@ -108,14 +128,14 @@ def list_jobs():
         table.add_column("Resume Versions")
 
         for job in jobs:
-            resume_count = len(job.resume_versions)
-            applied_date = job.applied_date.strftime("%Y-%m-%d") if getattr(job, 'applied_date', None) else "N/A"
+            resume_count = job['resume_versions']
+            applied_date = job['applied_date'].strftime("%Y-%m-%d") if job['applied_date'] else "N/A"
             
             table.add_row(
-                str(job.id),
-                str(job.company),
-                str(job.position),
-                str(job.status.value),
+                str(job['id']),
+                str(job['company']),
+                str(job['position']),
+                str(job['status'].value),
                 str(applied_date),
                 str(resume_count)
             )
@@ -134,7 +154,7 @@ def show_resumes(job_id):
             console.print(f"[red]No job found with ID {job_id}[/red]")
             return
 
-        versions = storage.get_job_resume_versions(job_id)
+        versions = storage.get_resume_versions(job_id)
         if not versions:
             console.print("[yellow]No resume versions found for this job[/yellow]")
             return
@@ -146,15 +166,15 @@ def show_resumes(job_id):
         table.add_column("Notes")
 
         for version in versions:
-            upload_date = getattr(version, 'upload_date', None)
+            upload_date = version['upload_date']
             table.add_row(
-                str(version.version),
-                str(version.filename),
+                str(version['version']),
+                str(version['filename']),
                 upload_date.strftime("%Y-%m-%d %H:%M:%S") if upload_date else "N/A",
-                str(getattr(version, 'notes', None)) if getattr(version, 'notes', None) else "N/A"
+                str(version['notes']) if version['notes'] else "N/A"
             )
 
-        console.print(f"\nResumes for {job.company} - {job.position}")
+        console.print(f"\nResumes for {job['company']} - {job['position']}")
         console.print(table)
     except Exception as e:
         console.print(f"[red]Error showing resumes: {str(e)}[/red]")
@@ -171,12 +191,12 @@ def delete_job(job_id):
             return
 
         # Delete associated files from S3
-        for version in job.resume_versions:
-            s3.delete_file(version.s3_key)
+        for version in job['resume_versions']:
+            s3.delete_file(version['s3_key'])
 
         # Delete from database
         storage.delete_job(job_id)
-        console.print(f"[green]Successfully deleted job application for {job.company}[/green]")
+        console.print(f"[green]Successfully deleted job application for {job['company']}[/green]")
     except Exception as e:
         console.print(f"[red]Error deleting job: {str(e)}[/red]")
 

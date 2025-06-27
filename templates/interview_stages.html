@@ -5,14 +5,16 @@
     <div>
       <div class="d-flex align-items-center gap-3 mb-2">
         <a
-          href="{{ url_for('view_job', job_id=job.id) }}"
+          href="{{ url_for('view_job', job_id=job['id']) }}"
           class="btn btn-outline-secondary"
         >
           <i class="fas fa-arrow-left me-2"></i>Back to Job Details
         </a>
       </div>
       <h1 class="page-title mb-0">Interview Process</h1>
-      <h2 class="text-muted fs-4">{{ job.company }} - {{ job.position }}</h2>
+      <h2 class="text-muted fs-4">
+        {{ job['company'] }} - {{ job['position'] }}
+      </h2>
     </div>
     <button
       type="button"
@@ -32,7 +34,7 @@
         {% for stage in stages %}
         <div class="timeline-item">
           <div
-            class="timeline-marker {% if stage.status.value == 'Current' %}current{% elif stage.status.value == 'Completed' %}completed{% else %}upcoming{% endif %}"
+            class="timeline-marker {% if stage.status == stage_statuses.CURRENT %}current{% elif stage.status == stage_statuses.COMPLETED %}completed{% else %}upcoming{% endif %}"
           ></div>
           <div class="timeline-content">
             <div class="card">
@@ -41,12 +43,12 @@
                   class="d-flex justify-content-between align-items-start mb-2"
                 >
                   <h5 class="card-title mb-0">
-                    {% if stage.stage_type.value == 'Custom' %} {{
+                    {% if stage.stage_type == stage_types.CUSTOM %} {{
                     stage.custom_stage_name }} {% else %} {{
                     stage.stage_type.value }} {% endif %}
                   </h5>
                   <div
-                    class="badge {% if stage.status.value == 'Current' %}bg-success-light text-success{% elif stage.status.value == 'Completed' %}bg-success{% else %}bg-secondary{% endif %}"
+                    class="badge {% if stage.status == stage_statuses.CURRENT %}bg-success-light text-success{% elif stage.status == stage_statuses.COMPLETED %}bg-success{% else %}bg-secondary{% endif %}"
                   >
                     {{ stage.status.value }}
                   </div>
@@ -82,14 +84,14 @@
                   <button
                     type="button"
                     class="btn btn-sm btn-outline-primary me-2"
-                    onclick="editStage({{ stage.id }})"
+                    onclick="editStage('{{ stage.id }}')"
                   >
                     <i class="fas fa-edit"></i>
                   </button>
                   <button
                     type="button"
                     class="btn btn-sm btn-outline-danger"
-                    onclick="deleteStage({{ stage.id }})"
+                    onclick="deleteStage('{{ stage.id }}')"
                   >
                     <i class="fas fa-trash"></i>
                   </button>
@@ -130,7 +132,7 @@
       <div class="modal-body">
         <form
           id="stageForm"
-          action="{{ url_for('add_interview_stage', job_id=job.id) }}"
+          action="{{ url_for('add_interview_stage', job_id=job['id']) }}"
           method="POST"
         >
           <input type="hidden" id="stageId" name="stage_id" />
@@ -197,23 +199,7 @@
           <div class="mb-3">
             <label class="form-label">Questions</label>
             <div id="questionsContainer">
-              <div class="question-entry mb-2">
-                <div class="input-group">
-                  <input
-                    type="text"
-                    class="form-control"
-                    name="questions[]"
-                    placeholder="Enter a question"
-                  />
-                  <button
-                    type="button"
-                    class="btn btn-outline-danger"
-                    onclick="removeQuestion(this)"
-                  >
-                    <i class="fas fa-times"></i>
-                  </button>
-                </div>
-              </div>
+              <!-- Questions will be added dynamically -->
             </div>
             <button
               type="button"
@@ -346,7 +332,7 @@
 
 <script>
   // Add jobId as a global variable
-  const jobId = {{ job.id }};
+  const jobId = "{{ job['id'] }}";
 
   function addQuestion() {
     const container = document.getElementById("questionsContainer");
@@ -354,7 +340,9 @@
     newQuestion.className = "question-entry mb-2";
     newQuestion.innerHTML = `
         <div class="input-group">
-            <input type="text" class="form-control" name="questions[]" placeholder="Enter a question">
+            <input type="text" class="form-control" name="question" placeholder="Enter a question">
+            <input type="text" class="form-control" name="answer" placeholder="Enter an answer (optional)">
+            <input type="text" class="form-control" name="notes" placeholder="Enter notes (optional)">
             <button type="button" class="btn btn-outline-danger" onclick="removeQuestion(this)">
                 <i class="fas fa-times"></i>
             </button>
@@ -368,39 +356,61 @@
   }
 
   function deleteStage(stageId) {
-    const deleteModal = new bootstrap.Modal(document.getElementById("deleteStageModal"));
+    const deleteModal = new bootstrap.Modal(
+      document.getElementById("deleteStageModal")
+    );
     const deleteForm = document.getElementById("deleteStageForm");
-    deleteForm.action = `/job/${jobId}/interview_stage/${stageId}/delete`;
+    deleteForm.action = `/interview_stage/${stageId}/delete`;
     deleteModal.show();
   }
 
   function editStage(stageId) {
     // Fetch stage data and populate the form
-    fetch(`/job/${jobId}/interview_stage/${stageId}`)
-      .then(response => response.json())
-      .then(data => {
-        document.getElementById("stageModalTitle").textContent = "Edit Interview Stage";
+    fetch(`/interview_stage/${stageId}/data`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Network response was not ok");
+        }
+        return response.json();
+      })
+      .then((data) => {
+        document.getElementById("stageModalTitle").textContent =
+          "Edit Interview Stage";
         document.getElementById("stageId").value = stageId;
         document.getElementById("stageType").value = data.stage_type;
-        document.getElementById("customStageName").value = data.custom_stage_name || "";
-        document.getElementById("scheduledDate").value = data.scheduled_date || "";
+        document.getElementById("customStageName").value =
+          data.custom_stage_name || "";
+        document.getElementById("scheduledDate").value =
+          data.scheduled_date || "";
         document.getElementById("status").value = data.status;
         document.getElementById("keyTakeaway").value = data.key_takeaway || "";
-        document.getElementById("generalNotes").value = data.general_notes || "";
+        document.getElementById("generalNotes").value =
+          data.general_notes || "";
 
         // Update form action
-        document.getElementById("stageForm").action = `/job/${jobId}/interview_stage/${stageId}/update`;
+        document.getElementById(
+          "stageForm"
+        ).action = `/interview_stage/${stageId}/update`;
 
         // Handle questions
-        const questionsContainer = document.getElementById("questionsContainer");
+        const questionsContainer =
+          document.getElementById("questionsContainer");
         questionsContainer.innerHTML = "";
         if (data.questions && data.questions.length > 0) {
-          data.questions.forEach(q => {
+          data.questions.forEach((q) => {
             const questionDiv = document.createElement("div");
             questionDiv.className = "question-entry mb-2";
             questionDiv.innerHTML = `
               <div class="input-group">
-                <input type="text" class="form-control" name="questions[]" value="${q.question}" placeholder="Enter a question">
+                <input type="text" class="form-control" name="question" value="${escapeHtml(
+                  q.question
+                )}" placeholder="Enter a question">
+                <input type="text" class="form-control" name="answer" value="${escapeHtml(
+                  q.answer || ""
+                )}" placeholder="Enter an answer (optional)">
+                <input type="text" class="form-control" name="notes" value="${escapeHtml(
+                  q.notes || ""
+                )}" placeholder="Enter notes (optional)">
                 <button type="button" class="btn btn-outline-danger" onclick="removeQuestion(this)">
                   <i class="fas fa-times"></i>
                 </button>
@@ -408,24 +418,40 @@
             `;
             questionsContainer.appendChild(questionDiv);
           });
-        } else {
-          // Add one empty question field if there are no questions
-          addQuestion();
         }
 
-        const modal = new bootstrap.Modal(document.getElementById("addStageModal"));
+        // Show/hide custom name field based on stage type
+        const customNameGroup = document.getElementById("customNameGroup");
+        customNameGroup.style.display =
+          data.stage_type === "CUSTOM" ? "block" : "none";
+
+        // Show the modal
+        const modal = new bootstrap.Modal(
+          document.getElementById("addStageModal")
+        );
         modal.show();
       })
-      .catch(error => {
-        console.error('Error:', error);
-        alert('Error loading interview stage data. Please try again.');
+      .catch((error) => {
+        console.error("Error:", error);
+        alert("Error loading interview stage data. Please try again.");
       });
   }
 
   // Show/hide custom stage name field based on stage type
-  document.getElementById("stageType").addEventListener("change", function() {
+  document.getElementById("stageType").addEventListener("change", function () {
     const customNameGroup = document.getElementById("customNameGroup");
     customNameGroup.style.display = this.value === "CUSTOM" ? "block" : "none";
   });
+
+  // Helper function to escape HTML special characters
+  function escapeHtml(unsafe) {
+    if (!unsafe) return "";
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
 </script>
 {% endblock %}
