@@ -89,10 +89,45 @@ class StorageManager:
                 } for version in job.resume_versions]
             }
 
+    def _sync_initial_stage(self, session: Session, job_id: int, status: ApplicationStatus) -> None:
+        """Sync the initial stage with the job status"""
+        # Map job status to stage type and status
+        status_to_stage = {
+            ApplicationStatus.DRAFT: (InterviewStageType.PHONE_SCREEN, InterviewStageStatus.UPCOMING),
+            ApplicationStatus.APPLIED: (InterviewStageType.PHONE_SCREEN, InterviewStageStatus.COMPLETED),
+            ApplicationStatus.INTERVIEWING: (InterviewStageType.TECHNICAL_INTERVIEW, InterviewStageStatus.CURRENT),
+            ApplicationStatus.OFFER: (InterviewStageType.FINAL_ROUND, InterviewStageStatus.COMPLETED),
+            ApplicationStatus.REJECTED: (InterviewStageType.PHONE_SCREEN, InterviewStageStatus.COMPLETED),
+            ApplicationStatus.WITHDRAWN: (InterviewStageType.PHONE_SCREEN, InterviewStageStatus.COMPLETED)
+        }
+
+        # Get the first stage if exists
+        first_stage = session.query(InterviewStage).filter_by(job_id=job_id).order_by(InterviewStage.id.asc()).first()
+        stage_type, stage_status = status_to_stage[status]
+
+        current_time = datetime.now()
+        
+        if first_stage is not None:
+            # Update existing first stage
+            setattr(first_stage, 'stage_type', stage_type)
+            setattr(first_stage, 'status', stage_status)
+            if status == ApplicationStatus.APPLIED:
+                setattr(first_stage, 'completed_date', current_time)
+        else:
+            # Create new first stage
+            first_stage = InterviewStage()
+            setattr(first_stage, 'job_id', job_id)
+            setattr(first_stage, 'stage_type', stage_type)
+            setattr(first_stage, 'status', stage_status)
+            if status == ApplicationStatus.APPLIED:
+                setattr(first_stage, 'completed_date', current_time)
+            session.add(first_stage)
+
     def create_job(self, company: str, position: str, status: ApplicationStatus, 
                   applied_date: Optional[datetime] = None, notes: Optional[str] = None) -> dict:
         """Create a new job"""
         with self.session_scope() as session:
+            # Create the job
             job = Job()
             setattr(job, 'company', company)
             setattr(job, 'position', position)
@@ -101,6 +136,17 @@ class StorageManager:
             setattr(job, 'notes', notes)
             session.add(job)
             session.flush()
+
+            # Get the job ID as an integer
+            job_id = session.query(Job.id).filter_by(
+                company=company,
+                position=position,
+                status=status
+            ).scalar()
+
+            # Create initial stage
+            self._sync_initial_stage(session, job_id, status)
+            
             return {
                 'id': job.id,
                 'company': job.company,
@@ -121,6 +167,10 @@ class StorageManager:
             setattr(job, 'status', status)
             setattr(job, 'applied_date', applied_date)
             setattr(job, 'notes', notes)
+
+            # Sync initial stage with new status
+            self._sync_initial_stage(session, job_id, status)
+
             return {
                 'id': job.id,
                 'company': job.company,
