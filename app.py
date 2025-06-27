@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from models import init_db, ApplicationStatus
 from storage import StorageManager
 from cloud import S3Handler
+from email_manager import create_email_manager
 
 # Load environment variables
 load_dotenv()
@@ -178,6 +179,56 @@ def delete_job(job_id):
         console.print(f"[green]Successfully deleted job application for {job.company}[/green]")
     except Exception as e:
         console.print(f"[red]Error deleting job: {str(e)}[/red]")
+
+@cli.command()
+@click.option('--keyword', prompt='Search keyword', help='Keyword to search for in emails')
+@click.option('--max-results', default=50, help='Maximum number of emails to return')
+@click.option('--search-subject/--no-search-subject', default=True, help='Search in email subjects')
+@click.option('--search-body/--no-search-body', default=True, help='Search in email bodies')
+@click.option('--search-sender/--no-search-sender', default=True, help='Search in sender addresses')
+def search_emails(keyword, max_results, search_subject, search_body, search_sender):
+    """Search for job-related emails using a keyword"""
+    try:
+        # Create email manager instance
+        email_mgr = create_email_manager()
+        
+        # Search for emails
+        emails = email_mgr.search_emails(
+            keyword=keyword,
+            max_results=max_results,
+            search_subject=search_subject,
+            search_body=search_body,
+            search_sender=search_sender
+        )
+        
+        if not emails:
+            console.print("[yellow]No matching emails found[/yellow]")
+            return
+            
+        # Create table for display
+        table = Table(show_header=True, header_style="bold magenta")
+        table.add_column("Date", style="dim")
+        table.add_column("From")
+        table.add_column("Subject")
+        table.add_column("Content Preview")
+        
+        for email in emails:
+            # Get preview of body (first 100 chars)
+            preview = email.body[:100].replace('\n', ' ').strip()
+            if len(email.body) > 100:
+                preview += "..."
+                
+            table.add_row(
+                email.date.strftime("%Y-%m-%d %H:%M"),
+                email.sender,
+                email.subject,
+                preview
+            )
+            
+        console.print(table)
+        
+    except Exception as e:
+        console.print(f"[red]Error searching emails: {str(e)}[/red]")
 
 if __name__ == '__main__':
     cli() 

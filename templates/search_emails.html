@@ -1,0 +1,105 @@
+{% extends "base.html" %} {% block content %}
+<div class="row mb-4">
+  <div class="col">
+    <h2>Search Job-Related Emails</h2>
+  </div>
+</div>
+
+<div class="row mb-4">
+  <div class="col-md-8 offset-md-2">
+    <form method="GET" action="{{ url_for('search_emails') }}" class="card">
+      <div class="card-body">
+        <div class="mb-3">
+          <label for="keyword" class="form-label">Search Keyword</label>
+          <input
+            type="text"
+            class="form-control"
+            id="keyword"
+            name="keyword"
+            value="{{ keyword if keyword else '' }}"
+            required
+          />
+        </div>
+        <div class="row mb-3">
+          <div class="col-md-4">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox"
+              id="search_subject" name="search_subject" {{ 'checked' if
+              search_subject else '' }}>
+              <label class="form-check-label" for="search_subject">
+                Search in Subject
+              </label>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="search_body"
+              name="search_body" {{ 'checked' if search_body else '' }}>
+              <label class="form-check-label" for="search_body">
+                Search in Body
+              </label>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="search_sender"
+              name="search_sender" {{ 'checked' if search_sender else '' }}>
+              <label class="form-check-label" for="search_sender">
+                Search in Sender
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label for="max_results" class="form-label">Maximum Results</label>
+          <input
+            type="number"
+            class="form-control"
+            id="max_results"
+            name="max_results"
+            value="{{ max_results if max_results else 50 }}"
+            min="1"
+            max="100"
+          />
+        </div>
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-search"></i> Search Emails
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if emails %}
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>From</th>
+        <th>Subject</th>
+        <th>Preview</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for email in emails %}
+      <tr>
+        <td>{{ email.date.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>{{ email.sender }}</td>
+        <td>{{ email.subject }}</td>
+        <td>
+          {% if email.is_html %}
+          <span class="badge bg-info">HTML</span>
+          {% endif %} {{ email.body[:200]|replace('\n', ' ') }}{% if
+          email.body|length > 200 %}...{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif keyword %}
+<div class="alert alert-info">
+  No emails found matching your search criteria.
+</div>
+{% endif %} {% endblock %}

@@ -1,143 +1,396 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row mb-4">
-    <div class="col">
-        <h2>{{ job.company }} - {{ job.position }}</h2>
-    </div>
-    <div class="col text-end">
-        <a href="{{ url_for('index') }}" class="btn btn-secondary">
-            <i class="fas fa-arrow-left"></i> Back to List
-        </a>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-md-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h4>Job Details</h4>
+<div class="job-view-container">
+    <!-- Header Section -->
+    <div class="header-section mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1 class="company-title mb-2">{{ job.company }}</h1>
+                <h2 class="position-subtitle">{{ job.position }}</h2>
             </div>
-            <div class="card-body">
-                <form action="{{ url_for('update_status', job_id=job.id) }}" method="POST">
-                    <div class="mb-3">
-                        <label class="form-label">Status</label>
-                        <select name="status" class="form-select" onchange="this.form.submit()">
-                            {% for status in ApplicationStatus %}
-                            <option value="{{ status.name }}" {% if job.status == status %}selected{% endif %}>
-                                {{ status.value }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </form>
-                
-                <div class="mb-3">
-                    <label class="form-label">Applied Date</label>
-                    <p class="form-control-static">{{ job.applied_date.strftime('%Y-%m-%d') if job.applied_date else 'N/A' }}</p>
-                </div>
-                
-                {% if job.notes %}
-                <div class="mb-3">
-                    <label class="form-label">Notes</label>
-                    <p class="form-control-static">{{ job.notes }}</p>
-                </div>
-                {% endif %}
+            <div>
+                <a href="{{ url_for('index') }}" class="btn btn-outline-primary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to List
+                </a>
             </div>
         </div>
+        <hr class="divider">
+    </div>
 
-        <div class="card mb-4">
-            <div class="card-header">
-                <h4>Version Notes</h4>
-            </div>
-            <div class="card-body">
-                <form action="{{ url_for('add_resume', job_id=job.id) }}" method="POST">
-                    <div class="mb-3">
-                        <label for="notes" class="form-label">Notes for Current Version</label>
-                        <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
-                    </div>
-                    <div class="text-end">
-                        <button type="submit" class="btn btn-primary">Update Notes</button>
-                    </div>
-                </form>
-
-                {% if resumes %}
-                <div class="mt-4">
-                    <h5>Previous Version Notes</h5>
-                    {% for resume in resumes %}
-                        {% if resume.notes %}
-                        <div class="card mb-2">
-                            <div class="card-body py-2">
-                                <h6 class="card-subtitle mb-1 text-muted">Version {{ resume.version }} - {{ resume.upload_date.strftime('%Y-%m-%d %H:%M') }}</h6>
-                                <p class="card-text">{{ resume.notes }}</p>
-                            </div>
+    <div class="row g-4">
+        <!-- Left Column -->
+        <div class="col-md-6">
+            <!-- Job Details Card -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h3 class="card-title mb-0">
+                        <i class="fas fa-info-circle me-2"></i>Job Details
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('update_status', job_id=job.id) }}" method="POST" class="mb-4">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Application Status</label>
+                            <select name="status" class="form-select form-select-lg" onchange="this.form.submit()">
+                                {% for status in ApplicationStatus %}
+                                <option value="{{ status.name }}" {% if job.status == status %}selected{% endif %}
+                                    class="status-option-{{ status.name.lower() }}">
+                                    {{ status.value }}
+                                </option>
+                                {% endfor %}
+                            </select>
                         </div>
-                        {% endif %}
-                    {% endfor %}
+                    </form>
+                    
+                    <div class="mb-3">
+                        <a href="{{ url_for('view_interview_stages', job_id=job.id) }}" 
+                           class="btn btn-primary btn-lg w-100">
+                            <i class="fas fa-tasks me-2"></i>Manage Interview Process
+                        </a>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Applied Date</label>
+                        <p class="date-display">
+                            {% if job.applied_date %}
+                            <i class="far fa-calendar-alt me-2"></i>{{ job.applied_date.strftime('%Y-%m-%d') }}
+                            {% else %}
+                            <span class="text-muted">Not applied yet</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    
+                    {% if job.notes %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Notes</label>
+                        <div class="notes-box p-3">
+                            {{ job.notes }}
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
-                {% endif %}
             </div>
         </div>
-    </div>
-    
-    <div class="col-md-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h4>Resume Versions</h4>
-            </div>
-            <div class="card-body">
-                <form action="{{ url_for('add_resume', job_id=job.id) }}" method="POST" enctype="multipart/form-data" class="mb-4">
-                    <div class="mb-3">
-                        <label for="resume" class="form-label">Upload New Resume</label>
-                        <input type="file" class="form-control" id="resume" name="resume">
-                    </div>
-                    <div class="text-end">
-                        <button type="submit" class="btn btn-primary">Upload Resume</button>
-                    </div>
-                </form>
-
-                {% if resumes %}
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>Version</th>
-                                <th>Filename</th>
-                                <th>Upload Date</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for resume in resumes %}
-                            <tr>
-                                <td>{{ resume.version }}</td>
-                                <td>{{ resume.filename }}</td>
-                                <td>{{ resume.upload_date.strftime('%Y-%m-%d %H:%M') }}</td>
-                                <td>
-                                    <a href="{{ url_for('view_resume', job_id=job.id, version=resume.version) }}" 
-                                       class="btn btn-sm btn-info" 
-                                       target="_blank"
-                                       title="View Resume">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                    <a href="{{ url_for('download_resume', job_id=job.id, version=resume.version) }}" 
-                                       class="btn btn-sm btn-primary"
-                                       title="Download Resume">
-                                        <i class="fas fa-download"></i>
-                                    </a>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+        
+        <!-- Right Column -->
+        <div class="col-md-6">
+            <!-- Resume Versions Card -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h3 class="card-title mb-0">
+                        <i class="fas fa-file-alt me-2"></i>Resume Versions
+                    </h3>
                 </div>
-                {% else %}
-                <p class="text-muted">No resume versions uploaded yet.</p>
-                {% endif %}
+                <div class="card-body">
+                    <form action="{{ url_for('add_resume', job_id=job.id) }}" method="POST" 
+                          enctype="multipart/form-data" class="upload-form mb-4">
+                        <div class="mb-3">
+                            <label for="resume" class="form-label fw-bold">Upload New Resume</label>
+                            <input type="file" class="form-control" id="resume" name="resume">
+                        </div>
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-upload me-2"></i>Upload Resume
+                            </button>
+                        </div>
+                    </form>
+
+                    {% if resumes %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 10%">Version</th>
+                                    <th style="width: 45%">Filename</th>
+                                    <th style="width: 25%">Upload Date</th>
+                                    <th style="width: 20%">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for resume in resumes %}
+                                <tr>
+                                    <td class="align-middle">{{ resume.version }}</td>
+                                    <td class="align-middle text-break">{{ resume.filename }}</td>
+                                    <td class="align-middle">{{ resume.upload_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td class="align-middle">
+                                        <div class="btn-group" role="group">
+                                            <a href="{{ url_for('view_resume', job_id=job.id, version=resume.version) }}" 
+                                               class="btn btn-xs btn-info" 
+                                               target="_blank"
+                                               title="View Resume">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            <a href="{{ url_for('download_resume', job_id=job.id, version=resume.version) }}" 
+                                               class="btn btn-xs btn-primary"
+                                               title="Download Resume">
+                                                <i class="fas fa-download"></i>
+                                            </a>
+                                            <form action="{{ url_for('delete_resume', job_id=job.id, version=resume.version) }}" 
+                                                  method="POST" 
+                                                  style="display: inline;"
+                                                  onsubmit="return confirm('Are you sure you want to delete this resume version?');">
+                                                <button type="submit" 
+                                                        class="btn btn-xs btn-danger"
+                                                        title="Delete Resume">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-file-upload fa-3x mb-3"></i>
+                        <p>No resume versions uploaded yet.</p>
+                    </div>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Resume Viewer Modal -->
+<div class="modal fade" id="resumeViewerModal" tabindex="-1" aria-labelledby="resumeViewerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="resumeViewerModalLabel">Resume Viewer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="viewerContainer" class="position-relative" style="height: 80vh;">
+                    <!-- For PDFs -->
+                    <iframe id="pdfViewer" style="width: 100%; height: 100%; border: none; display: none;"></iframe>
+                    
+                    <!-- For non-PDF files -->
+                    <div id="nonPdfViewer" class="text-center p-5" style="display: none;">
+                        <i class="fas fa-file fa-3x mb-3 text-secondary"></i>
+                        <h4>Preview not available</h4>
+                        <p class="text-muted">This file type cannot be previewed directly. Please use the download button to view it.</p>
+                        <a id="downloadLink" href="#" class="btn btn-primary mt-3">
+                            <i class="fas fa-download me-2"></i>Download File
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openResumeViewer(event, url, filename) {
+    event.preventDefault();
+    const modal = new bootstrap.Modal(document.getElementById('resumeViewerModal'));
+    const pdfViewer = document.getElementById('pdfViewer');
+    const nonPdfViewer = document.getElementById('nonPdfViewer');
+    const downloadLink = document.getElementById('downloadLink');
+    const fileExt = filename.split('.').pop().toLowerCase();
+
+    // Update modal title
+    document.getElementById('resumeViewerModalLabel').textContent = filename;
+
+    // Set download link
+    downloadLink.href = url.replace('/view', '/download');
+
+    if (fileExt === 'pdf') {
+        // For PDFs, use PDF.js viewer
+        pdfViewer.src = `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(window.location.origin + url)}`;
+        pdfViewer.style.display = 'block';
+        nonPdfViewer.style.display = 'none';
+    } else {
+        // For non-PDFs, show download option
+        pdfViewer.style.display = 'none';
+        nonPdfViewer.style.display = 'block';
+    }
+    
+    modal.show();
+}
+</script>
+
+<style>
+    .job-view-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+    }
+
+    .company-title {
+        font-size: 2.5rem;
+        font-weight: 600;
+        color: #2c3e50;
+        margin: 0;
+    }
+
+    .position-subtitle {
+        font-size: 1.5rem;
+        color: #7f8c8d;
+        font-weight: 400;
+        margin: 0;
+    }
+
+    .divider {
+        border-top: 2px solid #eee;
+        margin: 1.5rem 0;
+    }
+
+    .card {
+        border: none;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+
+    .card-header {
+        border-bottom: 1px solid rgba(0,0,0,0.1);
+        padding: 1rem 1.25rem;
+    }
+
+    .card-title {
+        font-size: 1.25rem;
+        color: #2c3e50;
+    }
+
+    .form-select-lg {
+        font-size: 1rem;
+        padding: 0.5rem 1rem;
+    }
+
+    .status-option-draft { color: #7f8c8d; }
+    .status-option-applied { color: #2ecc71; }
+    .status-option-interviewing { color: #f1c40f; }
+    .status-option-rejected { color: #e74c3c; }
+    .status-option-accepted { color: #27ae60; }
+
+    .date-display {
+        font-size: 1.1rem;
+        margin: 0;
+    }
+
+    .notes-box {
+        background-color: #f8f9fa;
+        border-radius: 6px;
+        border: 1px solid #dee2e6;
+    }
+
+    .version-note-card {
+        background-color: #f8f9fa;
+        border-radius: 6px;
+        padding: 1rem;
+        border: 1px solid #dee2e6;
+    }
+
+    .version-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
+    }
+
+    .version-number {
+        font-weight: 600;
+        color: #2c3e50;
+    }
+
+    .version-date {
+        color: #7f8c8d;
+    }
+
+    .version-content {
+        color: #2c3e50;
+        font-size: 0.95rem;
+    }
+
+    .history-title {
+        font-size: 1.1rem;
+        color: #2c3e50;
+        font-weight: 600;
+    }
+
+    .upload-form {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 6px;
+        border: 1px solid #dee2e6;
+    }
+
+    /* Custom styles for extra small buttons */
+    .btn-xs {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.875rem;
+        line-height: 1.2;
+        border-radius: 0.2rem;
+    }
+    
+    /* Ensure buttons stay in one line */
+    .btn-group {
+        display: flex;
+        gap: 2px;
+    }
+    
+    /* Break long filenames */
+    .text-break {
+        word-break: break-word;
+    }
+
+    /* Hover effect for table rows */
+    .table-hover tbody tr:hover {
+        background-color: rgba(0,0,0,0.02);
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .company-title {
+            font-size: 2rem;
+        }
+        
+        .position-subtitle {
+            font-size: 1.25rem;
+        }
+        
+        .job-view-container {
+            padding: 1rem 0.5rem;
+        }
+    }
+
+    /* Modal styles */
+    .modal-xl {
+        max-width: 90%;
+    }
+
+    .modal-content {
+        border: none;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .modal-header {
+        background-color: var(--background-light);
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .modal-title {
+        font-weight: 600;
+        color: var(--text-dark);
+    }
+
+    #nonPdfViewer {
+        background-color: var(--background-light);
+    }
+
+    #nonPdfViewer h4 {
+        color: var(--text-dark);
+        margin-bottom: 1rem;
+    }
+
+    #nonPdfViewer .fas {
+        color: var(--secondary-color);
+    }
+</style>
 
 <!-- Add Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
