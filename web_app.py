@@ -5,6 +5,7 @@ from datetime import datetime
 from models import init_db, ApplicationStatus, InterviewStageType, InterviewStageStatus
 from storage import StorageManager
 from cloud import S3Handler
+from typing import Optional
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # Required for flash messages
@@ -58,16 +59,14 @@ def add_job():
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(filepath)
 
-                # Upload to S3 and create resume version
-                s3_key = f"resumes/{job['id']}/{filename}"
-                s3.upload_file(filepath, s3_key)
+                # Upload to S3
+                s3_key = s3.upload_file(filepath, job['id'])
                 
                 # Create resume version
                 storage.create_resume_version(
                     job_id=job['id'],
                     filename=filename,
                     s3_key=s3_key,
-                    version=1,
                     notes=request.form.get('resume_notes', '')
                 )
 
@@ -160,20 +159,15 @@ def add_resume(job_id):
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    # Get next version number
-    next_version = max([v['version'] for v in job['resume_versions']], default=0) + 1
-
     # Upload to S3 and create resume version
-    s3_key = f"resumes/{job_id}/{next_version}_{filename}"
-    s3.upload_file(filepath, s3_key)
+    s3_key = s3.upload_file(filepath, job_id)
     
     # Create resume version
     storage.create_resume_version(
         job_id=job_id,
         filename=filename,
         s3_key=s3_key,
-        version=next_version,
-        notes=request.form.get('notes', '')
+        notes=request.form.get('resume_notes', '')
     )
 
     # Clean up temporary file
@@ -192,7 +186,14 @@ def view_resume(version_id):
     # Download from S3 to temporary file
     filename = version['filename']
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    s3.download_file(version['s3_key'], filepath)
+    try:
+        s3.download_file(version['s3_key'], filepath)
+    except FileNotFoundError:
+        flash('Resume file not found in storage. The file might have been deleted or moved.', 'error')
+        return redirect(url_for('view_job', job_id=version['job_id']))
+    except Exception as e:
+        flash(f'Error downloading resume: {str(e)}', 'error')
+        return redirect(url_for('view_job', job_id=version['job_id']))
 
     # For PDFs, display inline. For other files, download
     if filename.lower().endswith('.pdf'):
@@ -232,7 +233,14 @@ def download_resume(version_id):
     # Download from S3 to temporary file
     filename = version['filename']
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    s3.download_file(version['s3_key'], filepath)
+    try:
+        s3.download_file(version['s3_key'], filepath)
+    except FileNotFoundError:
+        flash('Resume file not found in storage. The file might have been deleted or moved.', 'error')
+        return redirect(url_for('view_job', job_id=version['job_id']))
+    except Exception as e:
+        flash(f'Error downloading resume: {str(e)}', 'error')
+        return redirect(url_for('view_job', job_id=version['job_id']))
 
     try:
         return send_file(

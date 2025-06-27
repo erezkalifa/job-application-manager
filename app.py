@@ -71,7 +71,6 @@ def add_resume(job_id, resume, notes):
             job_id=job_id,
             filename=os.path.basename(resume),
             s3_key=s3_key,
-            version=1,
             notes=notes
         )
         

@@ -48,6 +48,17 @@ class S3Handler:
             local_path (str): Local path to save the file
         """
         try:
+            # Check if file exists first
+            try:
+                self.s3_client.head_object(Bucket=self.bucket_name, Key=s3_key)
+            except ClientError as e:
+                if e.response['Error']['Code'] == '404':
+                    logger.error(f"File {s3_key} not found in S3")
+                    raise FileNotFoundError(f"File {s3_key} not found in S3")
+                else:
+                    raise
+
+            # If we got here, file exists, so download it
             self.s3_client.download_file(self.bucket_name, s3_key, local_path)
             logger.info(f"Successfully downloaded {s3_key} from S3")
         

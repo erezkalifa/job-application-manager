@@ -210,15 +210,22 @@ class StorageManager:
             } for version in versions]
 
     def create_resume_version(self, job_id: int, filename: str, s3_key: str, 
-                            version: int, notes: Optional[str] = None) -> dict:
+                            notes: Optional[str] = None) -> dict:
         """Create a new resume version"""
         with self.session_scope() as session:
             self._validate_job_exists(session, job_id)
+            # Get the latest version number for this job
+            latest_version = session.query(ResumeVersion.version)\
+                .filter_by(job_id=job_id)\
+                .order_by(ResumeVersion.version.desc())\
+                .first()
+            next_version = (latest_version[0] + 1) if latest_version else 1
+
             resume = ResumeVersion()
             setattr(resume, 'job_id', job_id)
             setattr(resume, 'filename', filename)
             setattr(resume, 's3_key', s3_key)
-            setattr(resume, 'version', version)
+            setattr(resume, 'version', next_version)  # Use calculated next_version instead of passed version
             setattr(resume, 'notes', notes)
             session.add(resume)
             session.flush()
