@@ -1,6 +1,6 @@
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import Engine, Column
+from sqlalchemy import Engine, Column, or_
 import logging
 from datetime import datetime
 from typing import Optional, List, Any, Generator, TypeVar, cast
@@ -398,4 +398,30 @@ class StorageManager:
         with self.session_scope() as session:
             question = session.query(InterviewQuestion).filter_by(id=question_id).first()
             if question:
-                session.delete(question) 
+                session.delete(question)
+
+    def search_jobs(self, search_term: str) -> List[dict]:
+        """
+        Search for jobs by company name, position, or notes.
+        The search is case-insensitive and uses partial matching.
+        """
+        with self.session_scope() as session:
+            # Create search conditions for each field
+            search_term = f"%{search_term}%"
+            jobs = session.query(Job).filter(
+                or_(
+                    Job.company.ilike(search_term),
+                    Job.position.ilike(search_term),
+                    Job.notes.ilike(search_term)
+                )
+            ).order_by(Job.updated_at.desc()).all()
+            
+            return [{
+                'id': job.id,
+                'company': job.company,
+                'position': job.position,
+                'status': job.status,
+                'applied_date': job.applied_date if job.applied_date is not None else None,
+                'notes': job.notes if job.notes is not None else None,
+                'resume_versions': len(job.resume_versions)
+            } for job in jobs] 

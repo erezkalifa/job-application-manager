@@ -22,8 +22,12 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 @app.route('/')
 def index():
-    jobs = storage.get_all_jobs()
-    return render_template('index.html', jobs=jobs, ApplicationStatus=ApplicationStatus)
+    search_term = request.args.get('search', '').strip()
+    if search_term:
+        jobs = storage.search_jobs(search_term)
+    else:
+        jobs = storage.get_all_jobs()
+    return render_template('index.html', jobs=jobs, ApplicationStatus=ApplicationStatus, search_term=search_term)
 
 @app.route('/add_job', methods=['GET', 'POST'])
 def add_job():
